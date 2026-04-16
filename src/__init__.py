@@ -1,0 +1,1 @@
+"""Módulos base del dashboard retail."""
