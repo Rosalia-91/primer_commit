@@ -44,6 +44,12 @@ def build_analytical_dataset(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     customers["JoinDate"] = pd.to_datetime(customers["JoinDate"], errors="coerce")
     transactions["Date"] = pd.to_datetime(transactions["Date"], errors="coerce")
 
+    customers["CustomerFullName"] = (
+        customers["FirstName"].astype(str).str.strip()
+        + " "
+        + customers["LastName"].astype(str).str.strip()
+    )
+
     analytical_df = transactions.merge(customers, on="CustomerID", how="left")
     analytical_df = analytical_df.merge(products, on="ProductID", how="left")
     analytical_df = analytical_df.merge(
@@ -194,19 +200,17 @@ def get_category_quantity(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def get_segment_sales(df: pd.DataFrame) -> pd.DataFrame:
-    return (
-        df.groupby("Segment", as_index=False)["net_sales"]
-        .sum()
-        .sort_values("net_sales", ascending=False)
-    )
-
-
 def get_customer_summary(df: pd.DataFrame) -> pd.DataFrame:
-    customer_label = "CustomerName" if "CustomerName" in df.columns else "CustomerID"
+    group_cols = ["CustomerID"]
 
-    return (
-        df.groupby(["CustomerID", customer_label], as_index=False)
+    if "CustomerFullName" in df.columns:
+        group_cols.append("CustomerFullName")
+
+    if "Gender" in df.columns:
+        group_cols.append("Gender")
+
+    customer_summary = (
+        df.groupby(group_cols, as_index=False)
         .agg(
             transactions=("TransactionID", "nunique"),
             net_sales=("net_sales", "sum"),
@@ -215,6 +219,58 @@ def get_customer_summary(df: pd.DataFrame) -> pd.DataFrame:
         )
         .sort_values("net_sales", ascending=False)
     )
+
+    return customer_summary
+
+
+def add_customer_segment(customer_summary: pd.DataFrame) -> pd.DataFrame:
+    segmented = customer_summary.copy()
+
+    ranked_sales = segmented["net_sales"].rank(method="first")
+    segmented["CustomerSegment"] = pd.qcut(
+        ranked_sales,
+        q=3,
+        labels=["Bajo", "Medio", "Alto"]
+    )
+
+    return segmented
+
+
+def get_customer_segmented_summary(df: pd.DataFrame) -> pd.DataFrame:
+    customer_summary = get_customer_summary(df)
+    return add_customer_segment(customer_summary)
+
+
+def get_customer_segment_sales(df: pd.DataFrame) -> pd.DataFrame:
+    segmented = get_customer_segmented_summary(df)
+
+    segment_sales = (
+        segmented.groupby("CustomerSegment", as_index=False)["net_sales"]
+        .sum()
+    )
+
+    order_map = {"Bajo": 0, "Medio": 1, "Alto": 2}
+    segment_sales["segment_order"] = segment_sales["CustomerSegment"].astype(str).map(order_map)
+    segment_sales = segment_sales.sort_values("segment_order").drop(columns="segment_order")
+
+    return segment_sales
+
+
+def get_gender_sales(df: pd.DataFrame) -> pd.DataFrame:
+    if "Gender" not in df.columns:
+        return pd.DataFrame(columns=["Gender", "net_sales"])
+
+    gender_sales = (
+        df.groupby("Gender", as_index=False)["net_sales"]
+        .sum()
+        .sort_values("net_sales", ascending=False)
+    )
+
+    gender_sales["GenderLabel"] = gender_sales["Gender"].replace(
+        {"M": "Masculino", "F": "Femenino"}
+    )
+
+    return gender_sales
 
 
 def get_quality_summary(df: pd.DataFrame) -> pd.DataFrame:

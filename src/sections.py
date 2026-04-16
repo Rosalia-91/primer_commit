@@ -3,8 +3,10 @@ import streamlit as st
 
 from src.data_processing import (
     get_category_quantity,
-    get_customer_summary,
+    get_customer_segment_sales,
+    get_customer_segmented_summary,
     get_executive_metrics,
+    get_gender_sales,
     get_monthly_payment_mix,
     get_monthly_snapshot,
     get_monthly_summary,
@@ -15,7 +17,6 @@ from src.data_processing import (
     get_quality_summary,
     get_sales_by_category,
     get_sales_by_payment,
-    get_segment_sales,
     get_subcategory_summary,
 )
 from src.ui import format_currency, format_delta, format_number, render_mini_card
@@ -50,8 +51,7 @@ def render_executive_view(df) -> None:
     )
 
     st.caption(
-        f"Comparación entre {current['year_month']} y "
-        f"{previous['year_month']}."
+        f"Comparación entre {current['year_month']} y {previous['year_month']}."
     )
 
     st.divider()
@@ -285,12 +285,13 @@ def render_products_view(df) -> None:
 
 
 def render_customers_view(df) -> None:
-    st.markdown('<div class="section-title">Clientes y transacciones</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Clientes y segmentos</div>', unsafe_allow_html=True)
 
-    customer_summary = get_customer_summary(df)
-    segment_sales = get_segment_sales(df)
+    customer_summary = get_customer_segmented_summary(df)
+    segment_sales = get_customer_segment_sales(df)
+    gender_sales = get_gender_sales(df)
 
-    customer_label = "CustomerName" if "CustomerName" in customer_summary.columns else "CustomerID"
+    customer_label = "CustomerFullName" if "CustomerFullName" in customer_summary.columns else "CustomerID"
 
     top_customers = customer_summary.head(10)
     most_active_customers = customer_summary.sort_values("transactions", ascending=False).head(10)
@@ -301,7 +302,7 @@ def render_customers_view(df) -> None:
     )
 
     tab1, tab2, tab3 = st.tabs(
-        ["Segmentos y clientes", "Actividad", "Tabla resumen"]
+        ["Segmentos y clientes", "Perfil del cliente", "Tabla resumen"]
     )
 
     with tab1:
@@ -309,9 +310,9 @@ def render_customers_view(df) -> None:
 
         fig_segment_sales = px.bar(
             segment_sales,
-            x="Segment",
+            x="CustomerSegment",
             y="net_sales",
-            title="Ventas netas por segmento"
+            title="Ventas netas por segmento de cliente"
         )
 
         fig_top_customers = px.bar(
@@ -328,13 +329,16 @@ def render_customers_view(df) -> None:
     with tab2:
         chart_col3, chart_col4 = st.columns(2)
 
-        fig_most_active = px.bar(
-            most_active_customers.sort_values("transactions"),
-            x="transactions",
-            y=customer_label,
-            orientation="h",
-            title="Top 10 clientes por número de transacciones"
-        )
+        if not gender_sales.empty:
+            fig_gender_sales = px.bar(
+                gender_sales,
+                x="GenderLabel",
+                y="net_sales",
+                title="Ventas netas por género"
+            )
+            chart_col3.plotly_chart(fig_gender_sales, use_container_width=True)
+        else:
+            chart_col3.info("No hay información de género disponible.")
 
         fig_customer_ticket = px.histogram(
             ticket_distribution,
@@ -342,12 +346,44 @@ def render_customers_view(df) -> None:
             nbins=20,
             title="Distribución del ticket promedio por cliente"
         )
-
-        chart_col3.plotly_chart(fig_most_active, use_container_width=True)
         chart_col4.plotly_chart(fig_customer_ticket, use_container_width=True)
 
+        st.plotly_chart(
+            px.bar(
+                most_active_customers.sort_values("transactions"),
+                x="transactions",
+                y=customer_label,
+                orientation="h",
+                title="Top 10 clientes por número de transacciones"
+            ),
+            use_container_width=True
+        )
+
     with tab3:
-        st.dataframe(customer_summary.head(20), use_container_width=True, hide_index=True)
+        columns_to_show = [
+            col for col in [
+                "CustomerID",
+                customer_label,
+                "Gender",
+                "CustomerSegment",
+                "transactions",
+                "net_sales",
+                "profit"
+            ] if col in customer_summary.columns
+        ]
+
+        st.dataframe(
+            customer_summary[columns_to_show].head(20),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    with st.expander("Nota metodológica de esta vista"):
+        st.write(
+            "El dataset no incluye una columna original llamada 'Segment'. "
+            "Por ello, la segmentación se construyó de forma derivada a partir de las ventas netas "
+            "acumuladas por cliente, generando tres niveles: Bajo, Medio y Alto."
+        )
 
 
 def render_table_view(df) -> None:

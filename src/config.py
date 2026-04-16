@@ -9,7 +9,7 @@ VIEWS = (
     "Resumen ejecutivo",
     "Tendencias comerciales",
     "Análisis de productos",
-    "Clientes y transacciones",
+    "Clientes y segmentos",
     "Exploración tabular",
 )
 

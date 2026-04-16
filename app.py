@@ -32,7 +32,7 @@ def main() -> None:
             "Resumen ejecutivo": render_executive_view,
             "Tendencias comerciales": render_trends_view,
             "Análisis de productos": render_products_view,
-            "Clientes y transacciones": render_customers_view,
+            "Clientes y segmentos": render_customers_view,
             "Exploración tabular": render_table_view,
         }
 
