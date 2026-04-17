@@ -4,7 +4,7 @@ import streamlit as st
 from src.data_processing import (
     get_category_quantity,
     get_customer_segment_sales,
-    get_customer_segmented_summary,
+    get_customer_summary,
     get_executive_metrics,
     get_gender_sales,
     get_monthly_payment_mix,
@@ -32,22 +32,22 @@ def render_executive_view(df) -> None:
     kpi_col1.metric(
         "Ventas último mes",
         format_currency(current["net_sales"]),
-        format_delta(current["net_sales"], previous["net_sales"]),
+        format_delta(current["net_sales"], previous["net_sales"], is_currency=True),
     )
     kpi_col2.metric(
         "Utilidad último mes",
         format_currency(current["profit"]),
-        format_delta(current["profit"], previous["profit"]),
+        format_delta(current["profit"], previous["profit"], is_currency=True),
     )
     kpi_col3.metric(
         "Transacciones último mes",
         format_number(current["transactions"]),
-        format_number(current["transactions"] - previous["transactions"]),
+        format_delta(current["transactions"], previous["transactions"]),
     )
     kpi_col4.metric(
         "Ticket promedio último mes",
         format_currency(current["average_ticket"]),
-        format_delta(current["average_ticket"], previous["average_ticket"]),
+        format_delta(current["average_ticket"], previous["average_ticket"], is_currency=True),
     )
 
     st.caption(
@@ -114,13 +114,6 @@ def render_executive_view(df) -> None:
     with tab3:
         st.dataframe(monthly_summary, use_container_width=True, hide_index=True)
 
-    with st.expander("Cómo interpretar esta vista"):
-        st.write(
-            "Esta sección ofrece una lectura rápida del comportamiento global del negocio. "
-            "Primero se compara el último mes con el anterior y después se revisan "
-            "resultados acumulados y hallazgos clave."
-        )
-
 
 def render_trends_view(df) -> None:
     st.markdown('<div class="section-title">Tendencias comerciales</div>', unsafe_allow_html=True)
@@ -186,26 +179,16 @@ def render_trends_view(df) -> None:
         )
         st.plotly_chart(fig_monthly_mix, use_container_width=True)
 
-    st.markdown(
-        """
-        <div class="info-box">
-        Esta sección separa la lectura temporal de la lectura comparativa. Así el usuario
-        distingue mejor el comportamiento por periodo y por dimensión comercial.
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
-
-def render_products_view(df) -> None:
+def render_products_view(df, top_n: int) -> None:
     st.markdown('<div class="section-title">Análisis de productos</div>', unsafe_allow_html=True)
 
     product_summary = get_product_summary(df)
     subcategory_summary = get_subcategory_summary(df)
     category_quantity = get_category_quantity(df)
 
-    top_products = product_summary.head(10)
-    top_profit_products = product_summary.sort_values("profit", ascending=False).head(10)
+    top_products = product_summary.head(top_n)
+    top_profit_products = product_summary.sort_values("profit", ascending=False).head(top_n)
 
     tab1, tab2, tab3 = st.tabs(
         ["Productos líderes", "Subcategorías", "Comparativas"]
@@ -219,7 +202,7 @@ def render_products_view(df) -> None:
             x="net_sales",
             y="ProductName",
             orientation="h",
-            title="Top 10 productos por ventas netas"
+            title=f"Top {top_n} productos por ventas netas"
         )
 
         fig_top_profit_products = px.bar(
@@ -227,7 +210,7 @@ def render_products_view(df) -> None:
             x="profit",
             y="ProductName",
             orientation="h",
-            title="Top 10 productos por utilidad"
+            title=f"Top {top_n} productos por utilidad"
         )
 
         chart_col1.plotly_chart(fig_top_products, use_container_width=True)
@@ -237,19 +220,19 @@ def render_products_view(df) -> None:
         chart_col3, chart_col4 = st.columns(2)
 
         fig_subcategory_sales = px.bar(
-            subcategory_summary.head(10).sort_values("net_sales"),
+            subcategory_summary.head(top_n).sort_values("net_sales"),
             x="net_sales",
             y="SubCategory",
             orientation="h",
-            title="Top 10 subcategorías por ventas netas"
+            title=f"Top {top_n} subcategorías por ventas netas"
         )
 
         fig_subcategory_profit = px.bar(
-            subcategory_summary.sort_values("profit", ascending=False).head(10).sort_values("profit"),
+            subcategory_summary.sort_values("profit", ascending=False).head(top_n).sort_values("profit"),
             x="profit",
             y="SubCategory",
             orientation="h",
-            title="Top 10 subcategorías por utilidad"
+            title=f"Top {top_n} subcategorías por utilidad"
         )
 
         chart_col3.plotly_chart(fig_subcategory_sales, use_container_width=True)
@@ -284,17 +267,17 @@ def render_products_view(df) -> None:
     )
 
 
-def render_customers_view(df) -> None:
+def render_customers_view(df, top_n: int) -> None:
     st.markdown('<div class="section-title">Clientes y segmentos</div>', unsafe_allow_html=True)
 
-    customer_summary = get_customer_segmented_summary(df)
+    customer_summary = get_customer_summary(df)
     segment_sales = get_customer_segment_sales(df)
     gender_sales = get_gender_sales(df)
 
     customer_label = "CustomerFullName" if "CustomerFullName" in customer_summary.columns else "CustomerID"
 
-    top_customers = customer_summary.head(10)
-    most_active_customers = customer_summary.sort_values("transactions", ascending=False).head(10)
+    top_customers = customer_summary.head(top_n)
+    most_active_customers = customer_summary.sort_values("transactions", ascending=False).head(top_n)
 
     ticket_distribution = customer_summary.copy()
     ticket_distribution["avg_ticket_customer"] = (
@@ -320,7 +303,7 @@ def render_customers_view(df) -> None:
             x="net_sales",
             y=customer_label,
             orientation="h",
-            title="Top 10 clientes por ventas netas"
+            title=f"Top {top_n} clientes por ventas netas"
         )
 
         chart_col1.plotly_chart(fig_segment_sales, use_container_width=True)
@@ -354,7 +337,7 @@ def render_customers_view(df) -> None:
                 x="transactions",
                 y=customer_label,
                 orientation="h",
-                title="Top 10 clientes por número de transacciones"
+                title=f"Top {top_n} clientes por número de transacciones"
             ),
             use_container_width=True
         )
@@ -376,13 +359,6 @@ def render_customers_view(df) -> None:
             customer_summary[columns_to_show].head(20),
             use_container_width=True,
             hide_index=True
-        )
-
-    with st.expander("Nota metodológica de esta vista"):
-        st.write(
-            "El dataset no incluye una columna original llamada 'Segment'. "
-            "Por ello, la segmentación se construyó de forma derivada a partir de las ventas netas "
-            "acumuladas por cliente, generando tres niveles: Bajo, Medio y Alto."
         )
 
 
@@ -414,9 +390,3 @@ def render_table_view(df) -> None:
 
     with stats_tab:
         st.dataframe(numeric_summary, use_container_width=True, hide_index=True)
-
-    with st.expander("Qué debe aprender el alumno en esta vista"):
-        st.write(
-            "Esta vista sirve para comprender la estructura interna de la tabla analítica, "
-            "sus tipos de datos, su calidad básica y el resumen estadístico de sus columnas numéricas."
-        )

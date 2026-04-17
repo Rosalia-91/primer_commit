@@ -56,7 +56,7 @@ def build_analytical_dataset(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
         stores,
         on="StoreID",
         how="left",
-        suffixes=("_Customer", "_Store")
+        suffixes=("_Customer", "_Store"),
     )
 
     analytical_df = analytical_df.rename(
@@ -78,7 +78,104 @@ def build_analytical_dataset(tables: dict[str, pd.DataFrame]) -> pd.DataFrame:
     analytical_df["month"] = analytical_df["TransactionDate"].dt.month
     analytical_df["year_month"] = analytical_df["TransactionDate"].dt.to_period("M").astype(str)
 
+    customer_sales = (
+        analytical_df.groupby("CustomerID", as_index=False)["net_sales"]
+        .sum()
+        .rename(columns={"net_sales": "customer_total_sales"})
+    )
+
+    ranked_sales = customer_sales["customer_total_sales"].rank(method="first")
+    customer_sales["CustomerSegment"] = pd.qcut(
+        ranked_sales,
+        q=3,
+        labels=["Bajo", "Medio", "Alto"]
+    )
+
+    analytical_df = analytical_df.merge(
+        customer_sales[["CustomerID", "CustomerSegment"]],
+        on="CustomerID",
+        how="left"
+    )
+
     return analytical_df
+
+
+def get_filter_options(df: pd.DataFrame) -> dict:
+    segment_order = {"Bajo": 0, "Medio": 1, "Alto": 2}
+
+    customer_segments = sorted(
+        df["CustomerSegment"].dropna().astype(str).unique().tolist(),
+        key=lambda x: segment_order.get(x, 99)
+    )
+
+    gender_map = {"M": "Masculino", "F": "Femenino"}
+
+    genders = sorted(df["Gender"].dropna().astype(str).unique().tolist())
+
+    return {
+        "min_date": df["TransactionDate"].min().date(),
+        "max_date": df["TransactionDate"].max().date(),
+        "regions": sorted(df["StoreRegion"].dropna().astype(str).unique().tolist()),
+        "categories": sorted(df["Category"].dropna().astype(str).unique().tolist()),
+        "payment_methods": sorted(df["PaymentMethod"].dropna().astype(str).unique().tolist()),
+        "customer_segments": customer_segments,
+        "genders": genders,
+        "gender_map": gender_map,
+    }
+
+
+def apply_dashboard_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+    filtered_df = df.copy()
+
+    start_date, end_date = filters["date_range"]
+    start_timestamp = pd.to_datetime(start_date)
+    end_timestamp = pd.to_datetime(end_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+
+    filtered_df = filtered_df[
+        (filtered_df["TransactionDate"] >= start_timestamp)
+        & (filtered_df["TransactionDate"] <= end_timestamp)
+    ]
+
+    if filters["regions"]:
+        filtered_df = filtered_df[filtered_df["StoreRegion"].isin(filters["regions"])]
+
+    if filters["categories"]:
+        filtered_df = filtered_df[filtered_df["Category"].isin(filters["categories"])]
+
+    if filters["payment_methods"]:
+        filtered_df = filtered_df[filtered_df["PaymentMethod"].isin(filters["payment_methods"])]
+
+    if filters["genders"]:
+        filtered_df = filtered_df[filtered_df["Gender"].isin(filters["genders"])]
+
+    if filters["customer_segments"]:
+        filtered_df = filtered_df[
+            filtered_df["CustomerSegment"].astype(str).isin(filters["customer_segments"])
+        ]
+
+    return filtered_df
+
+
+def get_active_filters_summary(filters: dict, gender_map: dict) -> list[str]:
+    active_filters = []
+
+    if filters["regions"]:
+        active_filters.append("Regiones: " + ", ".join(filters["regions"]))
+
+    if filters["categories"]:
+        active_filters.append("Categorías: " + ", ".join(filters["categories"]))
+
+    if filters["payment_methods"]:
+        active_filters.append("Métodos de pago: " + ", ".join(filters["payment_methods"]))
+
+    if filters["genders"]:
+        gender_labels = [gender_map.get(value, value) for value in filters["genders"]]
+        active_filters.append("Género: " + ", ".join(gender_labels))
+
+    if filters["customer_segments"]:
+        active_filters.append("Segmentos: " + ", ".join(filters["customer_segments"]))
+
+    return active_filters
 
 
 def get_executive_metrics(df: pd.DataFrame) -> dict[str, float]:
@@ -209,7 +306,10 @@ def get_customer_summary(df: pd.DataFrame) -> pd.DataFrame:
     if "Gender" in df.columns:
         group_cols.append("Gender")
 
-    customer_summary = (
+    if "CustomerSegment" in df.columns:
+        group_cols.append("CustomerSegment")
+
+    return (
         df.groupby(group_cols, as_index=False)
         .agg(
             transactions=("TransactionID", "nunique"),
@@ -220,45 +320,22 @@ def get_customer_summary(df: pd.DataFrame) -> pd.DataFrame:
         .sort_values("net_sales", ascending=False)
     )
 
-    return customer_summary
-
-
-def add_customer_segment(customer_summary: pd.DataFrame) -> pd.DataFrame:
-    segmented = customer_summary.copy()
-
-    ranked_sales = segmented["net_sales"].rank(method="first")
-    segmented["CustomerSegment"] = pd.qcut(
-        ranked_sales,
-        q=3,
-        labels=["Bajo", "Medio", "Alto"]
-    )
-
-    return segmented
-
-
-def get_customer_segmented_summary(df: pd.DataFrame) -> pd.DataFrame:
-    customer_summary = get_customer_summary(df)
-    return add_customer_segment(customer_summary)
-
 
 def get_customer_segment_sales(df: pd.DataFrame) -> pd.DataFrame:
-    segmented = get_customer_segmented_summary(df)
-
     segment_sales = (
-        segmented.groupby("CustomerSegment", as_index=False)["net_sales"]
+        df.groupby("CustomerSegment", as_index=False)["net_sales"]
         .sum()
     )
 
-    order_map = {"Bajo": 0, "Medio": 1, "Alto": 2}
-    segment_sales["segment_order"] = segment_sales["CustomerSegment"].astype(str).map(order_map)
-    segment_sales = segment_sales.sort_values("segment_order").drop(columns="segment_order")
+    segment_order = {"Bajo": 0, "Medio": 1, "Alto": 2}
+    segment_sales["segment_order"] = segment_sales["CustomerSegment"].astype(str).map(segment_order)
 
-    return segment_sales
+    return segment_sales.sort_values("segment_order").drop(columns="segment_order")
 
 
 def get_gender_sales(df: pd.DataFrame) -> pd.DataFrame:
     if "Gender" not in df.columns:
-        return pd.DataFrame(columns=["Gender", "net_sales"])
+        return pd.DataFrame(columns=["Gender", "net_sales", "GenderLabel"])
 
     gender_sales = (
         df.groupby("Gender", as_index=False)["net_sales"]
