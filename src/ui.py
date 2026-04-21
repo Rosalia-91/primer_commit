@@ -118,6 +118,20 @@ def render_filters(filter_options: dict) -> dict:
         options=filter_options["categories"],
         default=[]
     )
+    if categories:
+            available_subcategories = sorted({
+            sub
+            for cat in categories
+            for sub in filter_options["subcategories_by_category"].get(cat, [])
+        })
+    else:
+        available_subcategories = filter_options["subcategories"]
+
+    subcategories = st.sidebar.multiselect(
+        "Subcategoría",
+        options=available_subcategories,
+        default=[]
+    )
 
     payment_methods = st.sidebar.multiselect(
         "Método de pago",
@@ -158,6 +172,7 @@ def render_filters(filter_options: dict) -> dict:
         "date_range": date_range,
         "regions": regions,
         "categories": categories,
+        "subcategories": subcategories,
         "payment_methods": payment_methods,
         "genders": genders,
         "customer_segments": customer_segments,

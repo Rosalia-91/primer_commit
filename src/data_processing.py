@@ -118,6 +118,7 @@ def get_filter_options(df: pd.DataFrame) -> dict:
         "regions": sorted(df["StoreRegion"].dropna().astype(str).unique().tolist()),
         "categories": sorted(df["Category"].dropna().astype(str).unique().tolist()),
         "payment_methods": sorted(df["PaymentMethod"].dropna().astype(str).unique().tolist()),
+        "subcategories": sorted(df["SubCategory"].dropna().astype(str).unique().tolist()),
         "customer_segments": customer_segments,
         "genders": genders,
         "gender_map": gender_map,
@@ -148,6 +149,9 @@ def apply_dashboard_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     if filters["genders"]:
         filtered_df = filtered_df[filtered_df["Gender"].isin(filters["genders"])]
 
+    if filters["subcategories"]:
+        filtered_df = filtered_df[filtered_df["SubCategory"].isin(filters["subcategories"])]
+
     if filters["customer_segments"]:
         filtered_df = filtered_df[
             filtered_df["CustomerSegment"].astype(str).isin(filters["customer_segments"])
@@ -174,7 +178,11 @@ def get_active_filters_summary(filters: dict, gender_map: dict) -> list[str]:
 
     if filters["customer_segments"]:
         active_filters.append("Segmentos: " + ", ".join(filters["customer_segments"]))
+    
+    if filters["subcategories"]:
+        active_filters.append("Subcategorías: " + ", ".join(filters["subcategories"]))
 
+    
     return active_filters
 
 
